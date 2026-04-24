@@ -1,0 +1,39 @@
+project:
+  type: website
+  output-dir: docs   # GitHub Pages lee desde /docs
+
+website:
+  title: "RE4020 – Desarrollo Económico"
+  description: "Seminarios de análisis de datos: R, Stata y Python"
+  favicon: assets/favicon.ico
+  navbar:
+    left:
+      - text: "Inicio"
+        href: index.qmd
+      - text: "Seminarios"
+        menu:
+          - text: "Seminario 1 – Datos WDI"
+            href: seminarios/seminario_01.qmd
+          # Agrega aquí los demás seminarios:
+          # - text: "Seminario 2 – ..."
+          #   href: seminarios/seminario_02.qmd
+    right:
+      - icon: github
+        href: https://github.com/TU-USUARIO/re4020
+  page-footer:
+    left: "RE4020 – Economía del Desarrollo | Tec de Monterrey"
+    right: "Materiales de uso libre bajo licencia CC-BY"
+
+format:
+  html:
+    theme:
+      light: flatly
+      dark: darkly
+    toc: true
+    toc-depth: 3
+    code-tools: true
+    code-copy: true
+    highlight-style: github
+    df-print: paged
+    smooth-scroll: true
+    lang: es

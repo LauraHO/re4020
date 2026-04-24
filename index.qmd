@@ -1,0 +1,31 @@
+---
+title: "RE4020 – Economía del Desarrollo"
+subtitle: "Materiales de seminario con código en R, Stata y Python"
+page-layout: full
+---
+
+Bienvenidos al repositorio de materiales del curso **Maestría en Ciencias II – Desarrollo Económico**.
+
+Cada seminario incluye el código completo en los tres lenguajes de análisis. Elige el que más te acomode.
+
+---
+
+## 📚 Seminarios disponibles
+
+| # | Tema | Contenido |
+|---|------|-----------|
+| [1](seminarios/seminario_01.qmd) | **Datos del Banco Mundial** | Acceso a WDI, limpieza, visualizaciones con ggplot2 / matplotlib |
+| 2 | *próximamente* | |
+| 3 | *próximamente* | |
+
+---
+
+## 🛠️ ¿Cómo usar estos materiales?
+
+1. **Ver en el navegador**: lee el código directamente aquí
+2. **Descargar** el archivo `.qmd` con el botón `</> Code` → *Download*
+3. **Ejecutar localmente**: abre el `.qmd` en RStudio (para R), en Jupyter (para Python), o copia el bloque de Stata en tu do-file
+
+---
+
+*Materiales preparados por Laura Herrera | IEEC – Tec de Monterrey*

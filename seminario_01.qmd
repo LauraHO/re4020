@@ -1,0 +1,902 @@
+---
+title: "Seminario 1: Datos del Banco Mundial"
+subtitle: "Acceso, limpieza y visualización con WDI"
+author: "Laura Herrera — MC II, Desarrollo Económico RE4020"
+date: "2025-04-08"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-title: "Contenido"
+    code-fold: false
+    code-tools: true
+    theme: cosmo
+    highlight-style: github
+    df-print: paged
+execute:
+  eval: false
+  echo: true
+  warning: false
+  message: false
+---
+
+::: {.callout-note}
+Este seminario cubre el acceso a la base de datos del Banco Mundial (WDI), exploración inicial, limpieza de nombres y visualizaciones básicas. Puedes elegir el lenguaje con el que te sientas más cómodo/a: **R**, **Stata** o **Python**.
+:::
+
+---
+
+# 1. Paquetes y configuración inicial
+
+Lo primero es siempre cargar las librerías que vamos a usar. Esto es equivalente en los tres lenguajes: estás diciéndole al programa "necesito estas herramientas".
+
+::: {.panel-tabset}
+
+## 🟦 R
+
+```r
+# Usamos pacman para cargar (e instalar si hace falta) todos los paquetes de un jalón
+require(pacman)
+p_load(
+  tidyverse,   # manipulación y visualización (ggplot2, dplyr, tidyr...)
+  haven,       # leer archivos .dta de Stata
+  janitor,     # limpiar nombres de variables
+  WDI,         # API del Banco Mundial
+  ggthemes,    # temas adicionales para ggplot
+  scales,      # formato de ejes (commas, porcentajes, dólares)
+  plotly,      # gráficos interactivos
+  knitr        # tablas bonitas con kable()
+)
+```
+
+## 🟡 Stata
+
+```stata
+* Stata no tiene un gestor de paquetes único como R,
+* pero puedes instalar los principales así:
+ssc install wbopendata, replace   // equivalente a {WDI}
+ssc install estout,    replace   // tablas de resultados
+ssc install outreg2,  replace   // exportar tablas
+```
+
+## 🐍 Python
+
+```python
+# Instalación (solo una vez, desde terminal):
+# pip install pandas matplotlib seaborn wbgapi plotly
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import seaborn as sns
+import wbgapi as wb          # API oficial del Banco Mundial para Python
+import plotly.express as px
+```
+
+:::
+
+---
+
+# 2. Directorios de trabajo
+
+Antes de cargar datos, definimos rutas para entradas, salidas y gráficas. **Ajusta estas rutas a tu carpeta local.**
+
+::: {.panel-tabset}
+
+## 🟦 R
+
+```r
+inp   <- "ruta/a/tu/carpeta/inp"
+out   <- "ruta/a/tu/carpeta/out"
+graph <- "ruta/a/tu/carpeta/graph"
+```
+
+::: {.callout-tip}
+En proyectos reales es mejor usar `here::here()` para rutas relativas al proyecto, así el código corre en cualquier computadora sin cambiar nada.
+:::
+
+## 🟡 Stata
+
+```stata
+global inp   "ruta/a/tu/carpeta/inp"
+global out   "ruta/a/tu/carpeta/out"
+global graph "ruta/a/tu/carpeta/graph"
+```
+
+## 🐍 Python
+
+```python
+from pathlib import Path
+
+inp   = Path("ruta/a/tu/carpeta/inp")
+out   = Path("ruta/a/tu/carpeta/out")
+graph = Path("ruta/a/tu/carpeta/graph")
+
+# Crear carpetas si no existen
+for p in [inp, out, graph]:
+    p.mkdir(parents=True, exist_ok=True)
+```
+
+:::
+
+---
+
+# 3. Trabajaremos con la base WDI del Banco Mundial
+
+[World Development Indicators](https://databank.worldbank.org/source/world-development-indicators) contiene miles de indicadores para diversos países, regiones y años (desde 1960 donde hay información).
+
+Los países vienen codificados en **ISO 3166-1 alpha-3**: un estándar internacional de tres letras que identifica de manera única a cada país (MEX, HND, USA...). Los indicadores del WDI son codificados por el Banco Mundial.
+
+## 3.1 Opción A: Cargar desde archivo local (.dta)
+
+Si ya descargaste los datos del sitio del Banco Mundial y los tienes en un `.dta`:
+
+::: {.panel-tabset}
+
+## 🟦 R
+
+```r
+# Cargamos la base de datos desde un .dta de Stata
+wdi <- haven::read_dta(file.path(inp, "wdi.dta"))
+
+# Exploración rápida
+glimpse(wdi)   # estructura del dataframe
+str(wdi)       # tipos de variables
+```
+
+## 🟡 Stata
+
+```stata
+use "$inp/wdi.dta", clear
+
+* Exploración
+describe
+summarize
+list in 1/5
+```
+
+## 🐍 Python
+
+```python
+import pandas as pd
+
+# Leer un .dta de Stata directamente
+wdi = pd.read_stata(inp / "wdi.dta")
+
+# Exploración rápida
+print(wdi.shape)       # filas y columnas
+print(wdi.dtypes)      # tipos de variables
+print(wdi.head())      # primeras filas
+wdi.describe()         # estadísticas descriptivas
+```
+
+:::
+
+---
+
+## 3.2 Opción B (la más pro): Descargar directo con la API 🚀
+
+Esta es la forma recomendada porque **no necesitas archivos locales** y el código es completamente reproducible.
+
+::: {.callout-tip}
+## ¿Qué es una API?
+Es una conexión directa entre tu programa y la base de datos del Banco Mundial. En vez de descargar un Excel, le dices exactamente qué indicadores, qué países y qué años quieres, y el Banco Mundial te los manda al momento.
+:::
+
+### Buscar indicadores disponibles
+
+::: {.panel-tabset}
+
+## 🟦 R
+
+```r
+# WDIsearch() busca indicadores por palabra clave
+# Devuelve un dataframe con columnas: indicator (ID) y name
+
+glimpse(WDIsearch("gdp"))
+# Resultado: 500+ indicadores que contienen "gdp"
+
+# Más específico:
+WDIsearch("gdp per capita")
+WDIsearch("employment")
+WDIsearch("urban population")
+```
+
+## 🟡 Stata
+
+```stata
+* Con wbopendata puedes buscar indicadores:
+wbopendata, language(es) indicator(NY.GDP.PCAP.KD) long clear
+
+* Para explorar indicadores disponibles, lo más fácil es
+* buscarlos en: https://databank.worldbank.org
+```
+
+## 🐍 Python
+
+```python
+import wbgapi as wb
+
+# Buscar indicadores por palabra clave
+resultados = wb.series.info(q="gdp per capita")
+print(resultados)
+
+# Ver descripción de un indicador específico
+wb.series.metadata.get("NY.GDP.PCAP.KD")
+```
+
+:::
+
+---
+
+### Descargar datos con WDI()
+
+::: {.panel-tabset}
+
+## 🟦 R
+
+```r
+# Definimos país y grupo de comparación (peers)
+pais   <- "HND"
+peers  <- c("BOL", "DOM", "HTI", "CHL", "ECU", "GTM", "CRI")
+
+# Indicadores a descargar
+indicadores <- c(
+  "NY.GDP.PCAP.KD",      # PIB per cápita (USD constantes 2015)
+  "NY.GDP.MKTP.KD.ZG",   # Crecimiento del PIB (% anual)
+  "SP.URB.TOTL.IN.ZS",   # % población urbana
+  "SL.AGR.EMPL.ZS",      # % empleo en agricultura
+  "SL.IND.EMPL.ZS",      # % empleo en industria
+  "SL.SRV.EMPL.ZS",      # % empleo en servicios
+  "NV.AGR.TOTL.ZS",      # % PIB agricultura
+  "NV.IND.TOTL.ZS",      # % PIB industria
+  "NV.SRV.TOTL.ZS",      # % PIB servicios
+  "SP.POP.TOTL"          # Población total
+)
+
+# Descarga para todos los países (para poder comparar después)
+wdi_raw <- WDI(
+  country   = "all",
+  indicator = indicadores,
+  start     = 1960,
+  end       = 2023
+)
+
+glimpse(wdi_raw)
+```
+
+## 🟡 Stata
+
+```stata
+* Definimos macros
+global pais  "HND"
+global peers "BOL DOM HTI CHL ECU GTM CRI"
+
+* Descargamos indicadores del Banco Mundial
+* (uno a la vez con wbopendata, o todos con un loop)
+
+wbopendata, ///
+  indicator(NY.GDP.PCAP.KD; NY.GDP.MKTP.KD.ZG; SP.URB.TOTL.IN.ZS; ///
+            SL.AGR.EMPL.ZS; SL.IND.EMPL.ZS; SL.SRV.EMPL.ZS; ///
+            NV.AGR.TOTL.ZS; NV.IND.TOTL.ZS; NV.SRV.TOTL.ZS; SP.POP.TOTL) ///
+  long clear
+
+* Explorar
+describe
+list in 1/10
+```
+
+## 🐍 Python
+
+```python
+pais  = "HND"
+peers = ["BOL", "DOM", "HTI", "CHL", "ECU", "GTM", "CRI"]
+
+indicadores = {
+    "NY.GDP.PCAP.KD":    "gdp_pc",        # PIB per cápita (USD constantes 2015)
+    "NY.GDP.MKTP.KD.ZG": "gdp_growth",    # Crecimiento del PIB
+    "SP.URB.TOTL.IN.ZS": "urban_pct",     # % población urbana
+    "SL.AGR.EMPL.ZS":    "empl_agr",      # % empleo agricultura
+    "SL.IND.EMPL.ZS":    "empl_ind",      # % empleo industria
+    "SL.SRV.EMPL.ZS":    "empl_srv",      # % empleo servicios
+    "NV.AGR.TOTL.ZS":    "gdp_agr",       # % PIB agricultura
+    "NV.IND.TOTL.ZS":    "gdp_ind",       # % PIB industria
+    "NV.SRV.TOTL.ZS":    "gdp_srv",       # % PIB servicios
+    "SP.POP.TOTL":       "population"     # Población total
+}
+
+# Descarga para todos los países
+wdi_raw = wb.data.DataFrame(
+    series    = list(indicadores.keys()),
+    time      = range(1960, 2024),
+    labels    = True      # incluye nombre del país
+).reset_index()
+
+# Renombrar columnas al nombre corto
+wdi_raw.rename(columns=indicadores, inplace=True)
+
+print(wdi_raw.shape)
+wdi_raw.head()
+```
+
+:::
+
+---
+
+# 4. Limpieza de nombres de variables
+
+Cuando lees datos de Stata o del WDI, los nombres de las columnas pueden ser largos, con puntos, mayúsculas o caracteres raros. Aquí aprendemos a limpiarlos.
+
+::: {.callout-warning}
+## 🟡 Ojo con las etiquetas
+Si renombras usando etiquetas automáticamente, pueden aparecer espacios o caracteres especiales que rompen el código. La opción 2 (manual) es más segura.
+:::
+
+::: {.panel-tabset}
+
+## 🟦 R
+
+```r
+# Limpieza de nombres y creación de variable peers
+wdi1 <- wdi_raw %>%
+  janitor::clean_names() %>%           # pasa todo a snake_case
+  rename(
+    countrycode = iso3c,
+    countryname = country
+  ) %>%
+  mutate(
+    peers = if_else(countrycode %in% peers, 1, 0)
+  )
+
+# Verificar
+table(wdi1$peers)
+
+# 🧪 Extra: ver qué etiqueta tiene cada variable (útil con .dta)
+data.frame(
+  variable = names(wdi_raw),
+  label    = sapply(wdi_raw, function(x) attr(x, "label"))
+)
+```
+
+## 🟡 Stata
+
+```stata
+* Renombrar variables manualmente (más seguro)
+rename countrycode iso3c     // ajusta según tu base
+
+* Crear variable peers
+gen peers = 0
+foreach p of global peers {
+    replace peers = 1 if iso3c == "`p'"
+}
+
+tab peers
+```
+
+## 🐍 Python
+
+```python
+import numpy as np
+
+# Limpiar nombres: minúsculas y guiones bajos
+wdi_raw.columns = (
+    wdi_raw.columns
+    .str.lower()
+    .str.replace(".", "_", regex=False)
+    .str.replace(" ", "_", regex=False)
+)
+
+# Renombrar columnas clave
+wdi1 = wdi_raw.rename(columns={
+    "economy": "countrycode",
+    "time":    "year"
+})
+
+# Crear variable peers
+wdi1["peers"] = wdi1["countrycode"].isin(peers).astype(int)
+
+# Verificar
+print(wdi1["peers"].value_counts())
+wdi1.head()
+```
+
+:::
+
+---
+
+# 5. Visualizaciones
+
+## 5.1 PIB per cápita de Honduras (serie de tiempo)
+
+::: {.panel-tabset}
+
+## 🟦 R
+
+```r
+# Filtrar solo Honduras
+grafico1 <- wdi1 %>%
+  filter(countrycode == pais, year >= 1960, year <= 2023)
+
+# Gráfico básico
+ggplot(grafico1, aes(x = year, y = ny_gdp_pcap_kd)) +
+  geom_line(color = "#1F77B4", linewidth = 1) +
+  theme_minimal() +
+  labs(
+    title    = "PIB per cápita de Honduras (1960–2021)",
+    subtitle = "Dólares constantes de 2015",
+    x        = "Año",
+    y        = "PIB per cápita (USD)",
+    caption  = "Fuente: World Development Indicators"
+  ) +
+  scale_y_continuous(labels = scales::comma)
+
+# Versión pro
+ggplot(grafico1, aes(x = year, y = ny_gdp_pcap_kd)) +
+  geom_line(color = "#2C3E50", linewidth = 1.2) +
+  geom_point(color = "#2980B9", size = 2, alpha = 0.7) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title       = element_text(face = "bold", size = 18),
+    plot.subtitle    = element_text(size = 13, color = "gray30"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  ) +
+  labs(
+    title    = "💰 Evolución del PIB per cápita en Honduras (1960–2021)",
+    subtitle = "Valores constantes de 2015 en dólares estadounidenses",
+    x = "Año", y = "PIB per cápita (USD)",
+    caption  = "Fuente: Banco Mundial – WDI"
+  ) +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  scale_x_continuous(breaks = seq(1960, 2020, by = 10))
+```
+
+## 🟡 Stata
+
+```stata
+* Filtrar Honduras
+keep if iso3c == "$pais"
+sort year
+
+* Gráfico básico
+tsset year
+tsline ny_gdp_pcap_kd, ///
+  title("PIB per cápita de Honduras (1960–2021)") ///
+  ytitle("PIB per cápita (USD constantes 2015)") ///
+  xtitle("Año") ///
+  lcolor(navy) lwidth(medium)
+
+* Guardar
+graph export "$graph/graph1.png", replace width(1200)
+```
+
+## 🐍 Python
+
+```python
+# Filtrar Honduras
+grafico1 = wdi1[
+    (wdi1["countrycode"] == pais) &
+    (wdi1["year"] >= 1960) &
+    (wdi1["year"] <= 2023)
+].copy()
+
+# Gráfico básico con matplotlib
+fig, ax = plt.subplots(figsize=(10, 5))
+ax.plot(grafico1["year"], grafico1["gdp_pc"], color="#2C3E50", linewidth=1.5)
+ax.scatter(grafico1["year"], grafico1["gdp_pc"], color="#2980B9", s=20, alpha=0.7)
+ax.set_title("💰 Evolución del PIB per cápita en Honduras (1960–2021)",
+             fontsize=16, fontweight="bold")
+ax.set_xlabel("Año")
+ax.set_ylabel("PIB per cápita (USD constantes 2015)")
+ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
+ax.grid(axis="y", color="gray", alpha=0.3)
+ax.grid(axis="x", visible=False)
+plt.tight_layout()
+plt.savefig(graph / "graph1.png", dpi=300)
+plt.show()
+```
+
+:::
+
+---
+
+## 5.2 Tasa de crecimiento del PIB per cápita
+
+Para calcular la tasa de crecimiento anual necesitamos comparar cada año con el anterior. Eso se llama **primera diferencia logarítmica** (o simplemente variación porcentual año a año).
+
+::: {.panel-tabset}
+
+## 🟦 R
+
+```r
+wdi2 <- wdi1 %>%
+  arrange(countrycode, year) %>%
+  group_by(countrycode) %>%
+  mutate(
+    gdp_pc_growth = 100 * (ny_gdp_pcap_kd / lag(ny_gdp_pcap_kd) - 1)
+  ) %>%
+  ungroup()
+
+grafico2 <- wdi2 %>%
+  filter(countrycode == pais, year >= 1960, year <= 2023)
+
+ggplot(grafico2, aes(x = year, y = gdp_pc_growth)) +
+  geom_line(color = "#2C3E50", linewidth = 1.2) +
+  geom_point(color = "#2980B9", size = 2, alpha = 0.7) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title    = "📈 Tasa de crecimiento del PIB per cápita en Honduras",
+    subtitle = "Cálculo a partir de dólares constantes",
+    x = "Año", y = "Crecimiento anual (%)",
+    caption  = "Fuente: Banco Mundial – WDI"
+  ) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+  scale_x_continuous(breaks = seq(1960, 2020, by = 10))
+```
+
+## 🟡 Stata
+
+```stata
+sort iso3c year
+
+* Calcular tasa de crecimiento
+by iso3c: gen gdp_pc_growth = 100 * (ny_gdp_pcap_kd / L.ny_gdp_pcap_kd - 1)
+
+* Filtrar Honduras
+keep if iso3c == "$pais"
+
+tsset year
+tsline gdp_pc_growth, ///
+  title("Tasa de crecimiento del PIB per cápita – Honduras") ///
+  ytitle("Crecimiento anual (%)") xtitle("Año") ///
+  yline(0, lcolor(red) lpattern(dash)) ///
+  lcolor(navy) lwidth(medium)
+
+graph export "$graph/graph2.png", replace width(1200)
+```
+
+## 🐍 Python
+
+```python
+# Calcular variación porcentual año a año por país
+wdi2 = wdi1.sort_values(["countrycode", "year"]).copy()
+wdi2["gdp_pc_growth"] = (
+    wdi2.groupby("countrycode")["gdp_pc"]
+    .pct_change() * 100
+)
+
+grafico2 = wdi2[
+    (wdi2["countrycode"] == pais) &
+    (wdi2["year"] >= 1960) &
+    (wdi2["year"] <= 2023)
+].copy()
+
+fig, ax = plt.subplots(figsize=(10, 5))
+ax.plot(grafico2["year"], grafico2["gdp_pc_growth"], color="#2C3E50", linewidth=1.2)
+ax.scatter(grafico2["year"], grafico2["gdp_pc_growth"], color="#2980B9", s=20, alpha=0.7)
+ax.axhline(0, color="red", linestyle="--", linewidth=0.8)
+ax.set_title("📈 Tasa de crecimiento del PIB per cápita – Honduras",
+             fontsize=15, fontweight="bold")
+ax.set_xlabel("Año")
+ax.set_ylabel("Crecimiento anual (%)")
+ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.1f}%"))
+ax.grid(axis="y", color="gray", alpha=0.3)
+plt.tight_layout()
+plt.savefig(graph / "graph2.png", dpi=300)
+plt.show()
+```
+
+:::
+
+---
+
+## 5.3 Marcar eventos estructurales
+
+Una herramienta muy útil en análisis histórico es marcar en la gráfica los años de crisis, reformas o eventos clave.
+
+::: {.panel-tabset}
+
+## 🟦 R
+
+```r
+eventos <- c(1980, 1989, 2010)  # ajusta a los eventos relevantes para tu país
+
+ggplot(grafico2, aes(x = year, y = gdp_pc_growth)) +
+  geom_line(color = "#2C3E50", linewidth = 1.2) +
+  geom_vline(xintercept = eventos, color = "red3",
+             linewidth = 0.8, linetype = "dashed") +
+  geom_point(color = "#2980B9", size = 2, alpha = 0.7) +
+  annotate("text", x = 1980, y = max(grafico2$gdp_pc_growth, na.rm=TRUE),
+           label = "Crisis\n1980", color = "red3", size = 3.5, hjust = -0.1) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title   = "Tasa de crecimiento del PIB per cápita – Honduras",
+    x = "Año", y = "Crecimiento (%)",
+    caption = "Fuente: WDI – Banco Mundial"
+  ) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+  scale_x_continuous(breaks = seq(1960, 2020, by = 10))
+```
+
+## 🟡 Stata
+
+```stata
+local eventos "1980 1989 2010"
+
+tsline gdp_pc_growth, ///
+  xline(`eventos', lcolor(red) lpattern(dash) lwidth(thin)) ///
+  title("Tasa de crecimiento del PIB per cápita – Honduras") ///
+  ytitle("Crecimiento anual (%)") xtitle("Año") ///
+  lcolor(navy) lwidth(medium)
+
+graph export "$graph/graph3.png", replace width(1200)
+```
+
+## 🐍 Python
+
+```python
+eventos = [1980, 1989, 2010]
+etiquetas = {1980: "Crisis\n1980", 1989: "Reforma\n1989", 2010: "Crisis\n2010"}
+
+fig, ax = plt.subplots(figsize=(10, 5))
+ax.plot(grafico2["year"], grafico2["gdp_pc_growth"], color="#2C3E50", linewidth=1.2)
+ax.scatter(grafico2["year"], grafico2["gdp_pc_growth"], color="#2980B9", s=20, alpha=0.7)
+
+for ev in eventos:
+    ax.axvline(ev, color="red", linestyle="--", linewidth=0.9)
+    ax.text(ev + 0.5, grafico2["gdp_pc_growth"].max() * 0.9,
+            etiquetas[ev], color="red", fontsize=9)
+
+ax.set_title("Tasa de crecimiento del PIB per cápita – Honduras",
+             fontsize=15, fontweight="bold")
+ax.set_xlabel("Año")
+ax.set_ylabel("Crecimiento anual (%)")
+ax.grid(axis="y", color="gray", alpha=0.3)
+plt.tight_layout()
+plt.savefig(graph / "graph3.png", dpi=300)
+plt.show()
+```
+
+:::
+
+---
+
+## 5.4 Empleo por sector (gráfico de barras apiladas)
+
+::: {.panel-tabset}
+
+## 🟦 R
+
+```r
+anios <- c(1991, 1995, 2000, 2005, 2010, 2015, 2020)
+
+empleo_sector <- wdi1 %>%
+  filter(countrycode == pais, year %in% anios) %>%
+  select(year, sl_agr_empl_zs, sl_ind_empl_zs, sl_srv_empl_zs) %>%
+  pivot_longer(
+    cols      = starts_with("sl_"),
+    names_to  = "sector",
+    values_to = "empleo"
+  ) %>%
+  mutate(
+    sector = case_when(
+      sector == "sl_agr_empl_zs" ~ "Agricultura",
+      sector == "sl_ind_empl_zs" ~ "Industria",
+      sector == "sl_srv_empl_zs" ~ "Servicios"
+    )
+  )
+
+ggplot(empleo_sector, aes(x = factor(year), y = empleo, fill = sector)) +
+  geom_bar(stat = "identity") +
+  geom_text(
+    aes(label = round(empleo, 1)),
+    position = position_stack(vjust = 0.5),
+    color = "white", size = 3.5
+  ) +
+  scale_fill_manual(values = c(
+    "Agricultura" = "#1F77B4",
+    "Industria"   = "#AAAAAA",
+    "Servicios"   = "#C0392B"
+  )) +
+  labs(
+    title    = "Distribución del empleo por sector en Honduras",
+    subtitle = "Años seleccionados (valores en porcentaje)",
+    x = "Año", y = "Porcentaje de empleo", fill = "Sector",
+    caption  = "Fuente: WDI – Banco Mundial"
+  ) +
+  theme_minimal(base_size = 14)
+```
+
+## 🟡 Stata
+
+```stata
+* Mantener solo Honduras y años seleccionados
+keep if iso3c == "$pais"
+keep if inlist(year, 1991, 1995, 2000, 2005, 2010, 2015, 2020)
+
+* Reshape a formato largo
+keep year sl_agr_empl_zs sl_ind_empl_zs sl_srv_empl_zs
+reshape long sl_, i(year) j(sector) string
+
+rename sl_ empleo
+
+* Gráfico de barras apiladas
+graph bar (sum) empleo, over(sector) over(year) ///
+  stack asyvars ///
+  title("Distribución del empleo por sector – Honduras") ///
+  ytitle("Porcentaje de empleo") ///
+  legend(label(1 "Agricultura") label(2 "Industria") label(3 "Servicios"))
+
+graph export "$graph/empleo_sectores.png", replace width(1200)
+```
+
+## 🐍 Python
+
+```python
+anios = [1991, 1995, 2000, 2005, 2010, 2015, 2020]
+colores = {"Agricultura": "#1F77B4", "Industria": "#AAAAAA", "Servicios": "#C0392B"}
+
+empleo = (
+    wdi1[wdi1["countrycode"] == pais][["year", "empl_agr", "empl_ind", "empl_srv"]]
+    .query("year in @anios")
+    .rename(columns={"empl_agr": "Agricultura", "empl_ind": "Industria", "empl_srv": "Servicios"})
+    .set_index("year")
+)
+
+fig, ax = plt.subplots(figsize=(10, 6))
+bottom = pd.Series([0] * len(empleo), index=empleo.index)
+
+for sector, color in colores.items():
+    ax.bar(empleo.index.astype(str), empleo[sector],
+           bottom=bottom, label=sector, color=color)
+    # Etiquetas dentro de las barras
+    for i, (idx, val) in enumerate(empleo[sector].items()):
+        if not pd.isna(val) and val > 3:
+            ax.text(i, bottom.iloc[i] + val / 2, f"{val:.1f}",
+                    ha="center", va="center", color="white", fontsize=9)
+    bottom += empleo[sector].fillna(0)
+
+ax.set_title("Distribución del empleo por sector en Honduras",
+             fontsize=15, fontweight="bold")
+ax.set_xlabel("Año")
+ax.set_ylabel("Porcentaje de empleo")
+ax.legend(title="Sector")
+plt.tight_layout()
+plt.savefig(graph / "empleo_sectores.png", dpi=300)
+plt.show()
+```
+
+:::
+
+---
+
+## 5.5 Urbanización vs Ingreso per cápita
+
+Este gráfico muestra la relación entre el ingreso per cápita (en logaritmos) y la tasa de urbanización, comparando dos momentos: **1985** y **2021**. La curva verde = 1985, naranja = 2021.
+
+::: {.panel-tabset}
+
+## 🟦 R
+
+```r
+urban_income <- wdi1 %>%
+  filter(year %in% c(1985, 2021)) %>%
+  mutate(
+    lngdppc = log(ny_gdp_pcap_kd),
+    urban   = sp_urb_totl_in_zs
+  ) %>%
+  filter(!is.na(urban), !is.na(lngdppc))
+
+hnd_1985 <- urban_income %>% filter(countrycode == "HND", year == 1985)
+hnd_2021 <- urban_income %>% filter(countrycode == "HND", year == 2021)
+
+ggplot(urban_income, aes(x = lngdppc, y = urban)) +
+  geom_smooth(data = filter(urban_income, year == 1985),
+              method = "loess", se = FALSE, color = "#1B7837", linewidth = 1.2) +
+  geom_smooth(data = filter(urban_income, year == 2021),
+              method = "loess", se = FALSE, color = "#D95F02", linewidth = 1.2) +
+  geom_curve(
+    aes(x = hnd_1985$lngdppc, y = hnd_1985$urban,
+        xend = hnd_2021$lngdppc, yend = hnd_2021$urban),
+    arrow = arrow(length = unit(0.2, "cm"), type = "closed"),
+    curvature = 0.2, color = "#7B241C", linewidth = 1
+  ) +
+  geom_point(data = hnd_1985, aes(x = lngdppc, y = urban),
+             size = 3.5, color = "#045A8D") +
+  geom_text(data = hnd_1985, aes(label = "HND"),
+            vjust = -1.1, hjust = 1.1, color = "#045A8D", size = 4.2) +
+  annotate("text", x = 11.4, y = 23, label = "Trend 1985",
+           color = "#1B7837", size = 4.2, fontface = "italic") +
+  annotate("text", x = 11.4, y = 15, label = "Trend 2021",
+           color = "#D95F02", size = 4.2, fontface = "italic") +
+  labs(
+    title    = "Cambios estructurales en Honduras (1985 → 2021)",
+    subtitle = "Relación entre urbanización e ingreso per cápita (log USD)",
+    x = "Ingreso per cápita (log USD constantes)",
+    y = "Tasa de urbanización (%)",
+    caption  = "Fuente: Banco Mundial – WDI"
+  ) +
+  theme_minimal(base_size = 15)
+```
+
+## 🟡 Stata
+
+```stata
+* Preparar datos para dos años
+keep if inlist(year, 1985, 2021)
+gen lngdppc = log(ny_gdp_pcap_kd)
+
+* Scatter con líneas de tendencia separadas por año
+twoway ///
+  (lowess sp_urb_totl_in_zs lngdppc if year == 1985, lcolor(green) lwidth(medium)) ///
+  (lowess sp_urb_totl_in_zs lngdppc if year == 2021, lcolor(orange) lwidth(medium)) ///
+  (scatter sp_urb_totl_in_zs lngdppc if iso3c == "HND" & year == 1985, ///
+    mcolor(navy) msymbol(circle) msize(medium) mlabel(iso3c)) ///
+  , title("Urbanización vs Ingreso per cápita") ///
+  xtitle("Ingreso per cápita (log USD)") ///
+  ytitle("% Población urbana") ///
+  legend(order(1 "Tendencia 1985" 2 "Tendencia 2021"))
+
+graph export "$graph/urban_income.png", replace width(1200)
+```
+
+## 🐍 Python
+
+```python
+import numpy as np
+from scipy.stats import loess  # o usamos lowess de statsmodels
+
+from statsmodels.nonparametric.smoothers_lowess import lowess as sm_lowess
+
+urban_income = (
+    wdi1[wdi1["year"].isin([1985, 2021])]
+    .assign(lngdppc = lambda df: np.log(df["gdp_pc"]))
+    .dropna(subset=["urban_pct", "lngdppc"])
+)
+
+fig, ax = plt.subplots(figsize=(10, 6))
+
+colores_anio = {1985: "#1B7837", 2021: "#D95F02"}
+
+for anio, color in colores_anio.items():
+    sub = urban_income[urban_income["year"] == anio].dropna()
+    suavizado = sm_lowess(sub["urban_pct"], sub["lngdppc"], frac=0.5)
+    ax.plot(suavizado[:, 0], suavizado[:, 1], color=color,
+            linewidth=1.5, label=f"Tendencia {anio}")
+
+# Honduras 1985 → 2021
+hnd = urban_income[urban_income["countrycode"] == "HND"].sort_values("year")
+ax.annotate(
+    "", xy=(hnd.iloc[1]["lngdppc"], hnd.iloc[1]["urban_pct"]),
+    xytext=(hnd.iloc[0]["lngdppc"], hnd.iloc[0]["urban_pct"]),
+    arrowprops=dict(arrowstyle="->", color="#7B241C", lw=1.5)
+)
+ax.scatter(hnd.iloc[0]["lngdppc"], hnd.iloc[0]["urban_pct"],
+           color="#045A8D", s=80, zorder=5)
+ax.text(hnd.iloc[0]["lngdppc"] - 0.05, hnd.iloc[0]["urban_pct"] + 1.5,
+        "HND", color="#045A8D", fontsize=11)
+
+ax.set_title("Cambios estructurales en Honduras (1985 → 2021)",
+             fontsize=15, fontweight="bold")
+ax.set_xlabel("Ingreso per cápita (log USD constantes)")
+ax.set_ylabel("Tasa de urbanización (%)")
+ax.legend()
+ax.grid(axis="y", alpha=0.3)
+plt.tight_layout()
+plt.savefig(graph / "urban_income.png", dpi=300)
+plt.show()
+```
+
+:::
+
+---
+
+# Recursos y referencias
+
+| Recurso | Liga |
+|---|---|
+| WDI – CRAN | [cran.r-project.org/package=WDI](https://cran.r-project.org/web/packages/WDI/WDI.pdf) |
+| wbgapi – Python | [blogs.worldbank.org/opendata](https://blogs.worldbank.org/en/opendata/introducing-wbgapi-new-python-package-accessing-world-bank-data) |
+| World Bank DataBank | [databank.worldbank.org](https://databank.worldbank.org/source/world-development-indicators) |
+| Tutorial WDI en R | [worldpoliticsdatalab.org](https://worldpoliticsdatalab.org/tutorials/data-wrangling-and-graphing-world-bank-data-in-r-with-the-wdi-package/) |
+| wbopendata – Stata | [worldbank.github.io/stata](https://worldbank.github.io/stata/) |
